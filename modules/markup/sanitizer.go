@@ -41,7 +41,14 @@ func GetDefaultSanitizer() *Sanitizer {
 		}
 		defaultSanitizer.defaultPolicy = defaultSanitizer.createDefaultPolicy()
 		defaultSanitizer.descriptionPolicy = defaultSanitizer.createRepoDescriptionPolicy()
+
+		defaultSanitizer.defaultPolicy.AllowElements("object")
+		defaultSanitizer.defaultPolicy.AllowAttrs("data").Matching(regexp.MustCompile(`^https://(br|buildresults|gitexplorer)\.(opensuse\.org|suse\.de)/.*$`)).OnElements("object")
+		defaultSanitizer.defaultPolicy.AllowAttrs("type").Matching(regexp.MustCompile(`^image/svg\+xml$`)).OnElements("object")
+		defaultSanitizer.defaultPolicy.AllowAttrs("aria-label").OnElements("object")
 	})
+
+	// Allow <object> for br.opensuse.org image replacements.
 	return defaultSanitizer
 }
 

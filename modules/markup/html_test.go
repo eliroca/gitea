@@ -202,6 +202,9 @@ func TestRender_links(t *testing.T) {
 	test(
 		`[link](javascript:xss)`,
 		`<p>link</p>`)
+	test(
+		`![status in TW](https://br.opensuse.org/status/openSUSE:Tumbleweed/nodejs22/standard)`,
+		`<p><object data="https://br.opensuse.org/status/openSUSE:Tumbleweed/nodejs22/standard" type="image/svg+xml" aria-label="status in TW"></object></p>`)
 
 	// Test that should *not* be turned into URL
 	test(

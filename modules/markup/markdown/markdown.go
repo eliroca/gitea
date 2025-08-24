@@ -161,7 +161,10 @@ func SpecializedMarkdown(ctx *markup.RenderContext) *GoldmarkRender {
 			parser.WithAttribute(),
 			parser.WithASTTransformers(util.Prioritized(NewASTTransformer(&ctx.RenderInternal), 10000)),
 		),
-		goldmark.WithRendererOptions(html.WithUnsafe()),
+		goldmark.WithRendererOptions(
+			html.WithUnsafe(),
+			renderer.WithNodeRenderers(util.Prioritized(newObjectImageRenderer(), 500)),
+		),
 	)
 
 	// Override the original Tasklist renderer!

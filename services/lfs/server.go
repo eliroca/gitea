@@ -280,6 +280,35 @@ func BatchHandler(ctx *context.Context) {
 			responseObject = buildObjectResponse(rc, p, false, !exists, err)
 		} else {
 			var err *lfs_module.ObjectError
+
+			if exists && meta == nil {
+				accessible, accessibleErr := git_model.LFSObjectAccessible(ctx, ctx.Doer, p.Oid)
+				if accessibleErr != nil {
+					log.Error("Unable to check if LFS MetaObject [%s] is accessible. Error: %v", p.Oid, err)
+					writeStatus(ctx, http.StatusInternalServerError)
+					return
+				}
+				if accessible {
+					var newMetaObjErr error
+					meta, newMetaObjErr = git_model.NewLFSMetaObject(ctx, repository.ID, p)
+					if newMetaObjErr != nil {
+						log.Error("Unable to create LFS MetaObject [%s] for %s/%s. Error: %v", p.Oid, rc.User, rc.Repo, err)
+						writeStatus(ctx, http.StatusInternalServerError)
+						return
+					}
+				} else {
+					exists = false
+				}
+			}
+
+			if setting.LFS.FallbackToOBS && (!exists || meta == nil) {
+				obsresp := obsResponseOrNil(rc, p)
+				if obsresp != nil {
+					responseObjects = append(responseObjects, obsresp)
+					continue
+				}
+			}
+
 			if !exists || meta == nil {
 				err = &lfs_module.ObjectError{
 					Code:    http.StatusNotFound,
@@ -483,6 +512,27 @@ func getAuthenticatedRepository(ctx *context.Context, rc *requestContext, requir
 	}
 
 	return repository
+}
+
+func obsResponseOrNil(rc *requestContext, pointer lfs_module.Pointer) *lfs_module.ObjectResponse {
+	url := fmt.Sprintf("http://localhost:9999/check/%s/%d", pointer.Oid, pointer.Size)
+	resp, err := http.Get(url)
+	if err != nil {
+		log.Debug("URL %s returned error", url)
+		return nil
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Debug("URL %s didn't return body", url)
+		return nil
+	}
+	link := string(body)
+	rep := &lfs_module.ObjectResponse{Pointer: pointer}
+	rep.Actions = make(map[string]*lfs_module.Link)
+	header := make(map[string]string)
+	rep.Actions["download"] = &lfs_module.Link{Href: link, Header: header}
+	return rep
 }
 
 func buildObjectResponse(rc *requestContext, pointer lfs_module.Pointer, download, upload bool, err *lfs_module.ObjectError) *lfs_module.ObjectResponse {

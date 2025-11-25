@@ -22,6 +22,7 @@ var LFS = struct {
 	MaxFileSize    int64         `ini:"LFS_MAX_FILE_SIZE"`
 	LocksPagingNum int           `ini:"LFS_LOCKS_PAGING_NUM"`
 	MaxBatchSize   int           `ini:"LFS_MAX_BATCH_SIZE"`
+	FallbackToOBS  bool          `ini:"FALLBACK_TO_OBS"`
 
 	Storage *Storage
 }{}

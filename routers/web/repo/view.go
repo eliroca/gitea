@@ -96,7 +96,9 @@ func getFileReader(ctx gocontext.Context, repoID int64, blob *git.Blob) (buf []b
 	meta, err := git_model.GetLFSMetaObjectByOid(ctx, repoID, pointer.Oid)
 	if err != nil { // fallback to a plain file
 		fi.lfsMeta = &pointer
-		log.Warn("Unable to access LFS pointer %s in repo %d: %v", pointer.Oid, repoID, err)
+		// OBS-LFS bridge should be consulted in the git_model.GetLFSMetaObjectByOid() ??
+		// bug: https://github.com/openSUSE/openSUSE-git/issues/83
+		log.Info("Unable to access LFS pointer %s in repo %d: %v", pointer.Oid, repoID, err)
 		return buf, dataRc, fi, nil
 	}
 

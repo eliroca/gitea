@@ -37,6 +37,9 @@ func DownloadDiffOrPatch(ctx context.Context, pr *issues_model.PullRequest, w io
 	defer closer.Close()
 
 	compareArg := pr.MergeBase + "..." + pr.GetGitHeadRefName()
+	if pr.MergeBase == "" {
+		compareArg = pr.BaseBranch + ".." + pr.GetGitHeadRefName()
+	}
 	switch {
 	case patch:
 		err = gitRepo.GetPatch(compareArg, w)
@@ -44,6 +47,19 @@ func DownloadDiffOrPatch(ctx context.Context, pr *issues_model.PullRequest, w io
 		err = gitRepo.GetDiffBinary(compareArg, w)
 	default:
 		err = gitRepo.GetDiff(compareArg, w)
+	}
+
+	if err != nil && gitcmd.IsErrorExitCode(err, 128) {
+		// If symmetric difference failed (likely unrelated histories), try direct difference
+		compareArg = pr.BaseBranch + ".." + pr.GetGitHeadRefName()
+		switch {
+		case patch:
+			err = gitRepo.GetPatch(compareArg, w)
+		case binary:
+			err = gitRepo.GetDiffBinary(compareArg, w)
+		default:
+			err = gitRepo.GetDiff(compareArg, w)
+		}
 	}
 
 	if err != nil {

@@ -749,8 +749,16 @@ func viewPullFiles(ctx *context.Context, beforeCommitID, afterCommitID string) {
 	}
 	afterCommit := indexCommit(prInfo.Commits, afterCommitID)
 	if afterCommit == nil {
-		ctx.HTTPError(http.StatusBadRequest, "after commit not found in PR commits")
-		return
+		if afterCommitID != headCommitID {
+			ctx.HTTPError(http.StatusBadRequest, "after commit not found in PR commits")
+			return
+		}
+
+		afterCommit, err = gitRepo.GetCommit(afterCommitID)
+		if err != nil {
+			ctx.ServerError("GetCommit", err)
+			return
+		}
 	}
 
 	var beforeCommit *git.Commit

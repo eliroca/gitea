@@ -203,7 +203,7 @@
 
 				{{template "repo/issue/view_content/update_branch_by_merge" $}}
 
-				{{if .Issue.PullRequest.IsEmpty}}
+				{{if and .Issue.PullRequest.IsEmpty .Issue.PullRequest.MergeBase}}
 					<div class="divider"></div>
 					<div class="item">
 						{{svg "octicon-alert"}}

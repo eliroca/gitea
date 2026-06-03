@@ -812,7 +812,7 @@ func GetSquashMergeCommitMessages(ctx context.Context, pr *issues_model.PullRequ
 
 	mergeBase, err := gitRepo.GetCommit(pr.MergeBase)
 	if err != nil {
-		log.Error("Unable to get merge base commit: %s Error: %v", pr.MergeBase, err)
+		log.Debug("Unable to get merge base commit for pull request %s#%d Error: %v", pr.HeadRepo.FullName(), pr.Index, err)
 		return ""
 	}
 

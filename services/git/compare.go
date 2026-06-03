@@ -5,6 +5,7 @@ package git
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	repo_model "code.gitea.io/gitea/models/repo"
@@ -73,10 +74,16 @@ func GetCompareInfo(ctx context.Context, baseRepo, headRepo *repo_model.Reposito
 		}
 	}
 
+	mergeBaseErr := false
 	if !directComparison {
 		compareInfo.MergeBase, err = gitrepo.MergeBase(ctx, headRepo, compareInfo.BaseCommitID, compareInfo.HeadCommitID)
 		if err != nil {
-			return compareInfo, fmt.Errorf("MergeBase: %w", err)
+			if !errors.Is(err, util.ErrNotExist) {
+				return nil, fmt.Errorf("MergeBase: %w", err)
+			}
+			// Fall back to baseRef when there is no merge-base (unrelated histories).
+			mergeBaseErr = true
+			compareInfo.MergeBase = compareInfo.BaseCommitID
 		}
 	} else {
 		compareInfo.MergeBase = compareInfo.BaseCommitID
@@ -88,7 +95,12 @@ func GetCompareInfo(ctx context.Context, baseRepo, headRepo *repo_model.Reposito
 		// which is different from the meaning of "..." in git diff (where it implies diffing from the merge base).
 		// For listing PR commits, we must use merge-base..head to include only the commits introduced by the head branch.
 		// Otherwise, commits newly pushed to the base branch would also be included, which is incorrect.
-		compareInfo.Commits, err = headGitRepo.ShowPrettyFormatLogToList(ctx, compareInfo.MergeBase+".."+compareInfo.HeadCommitID)
+		// Default to merge-base..head; if there is no merge-base, show commits from head (unrelated histories).
+		logRange := compareInfo.MergeBase + ".." + compareInfo.HeadCommitID
+		if mergeBaseErr {
+			logRange = compareInfo.HeadCommitID
+		}
+		compareInfo.Commits, err = headGitRepo.ShowPrettyFormatLogToList(ctx, logRange)
 		if err != nil {
 			return nil, fmt.Errorf("ShowPrettyFormatLogToList: %w", err)
 		}

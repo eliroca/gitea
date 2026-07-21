@@ -1,0 +1,205 @@
+// Copyright 2024 The Gitea Authors. All rights reserved.
+// SPDX-License-Identifier: MIT
+
+package repo
+
+import (
+	"errors"
+	"net/http"
+
+	repo_model "gitea.dev/models/repo"
+	user_model "gitea.dev/models/user"
+	api "gitea.dev/modules/structs"
+	"gitea.dev/modules/web"
+	"gitea.dev/services/context"
+	"gitea.dev/services/convert"
+	repo_service "gitea.dev/services/repository"
+)
+
+// Reparent promotes a fork to become a top-level repository
+func Reparent(ctx *context.APIContext) {
+	// swagger:operation POST /repos/{owner}/{repo}/reparent repository repoReparent
+	// ---
+	// summary: Reparent a repo
+	// produces:
+	// - application/json
+	// parameters:
+	// - name: owner
+	//   in: path
+	//   description: owner of the repo to reparent
+	//   type: string
+	//   required: true
+	// - name: repo
+	//   in: path
+	//   description: name of the repo to reparent
+	//   type: string
+	//   required: true
+	// - name: body
+	//   in: body
+	//   description: "Reparent Options"
+	//   required: true
+	//   schema:
+	//     "$ref": "#/definitions/ReparentRepoOption"
+	// responses:
+	//   "202":
+	//     "$ref": "#/responses/Repository"
+	//   "403":
+	//     "$ref": "#/responses/forbidden"
+	//   "404":
+	//     "$ref": "#/responses/notFound"
+	//   "422":
+	//     "$ref": "#/responses/validationError"
+
+	opts := web.GetForm(ctx).(*api.ReparentRepoOption)
+
+	targetOwner, err := user_model.GetUserByName(ctx, opts.NewOwner)
+	if err != nil {
+		if user_model.IsErrUserNotExist(err) {
+			ctx.APIError(http.StatusNotFound, "The target owner does not exist")
+			return
+		}
+		ctx.APIErrorInternal(err)
+		return
+	}
+
+	// Permission check:
+	// 1. Initiator is instance admin
+	// 2. Initiator is owner of source repo
+	if !ctx.Doer.IsAdmin && !ctx.Repo.Permission.IsOwner() {
+		ctx.APIError(http.StatusForbidden, "Only instance admins or the repository owner can initiate reparenting")
+		return
+	}
+
+	repo, err := repo_service.StartRepositoryReparent(ctx, ctx.Doer, ctx.Repo.Repository, targetOwner.ID, opts.NewName)
+	if err != nil {
+		switch {
+		case repo_model.IsErrRepoTransferInProgress(err):
+			ctx.APIError(http.StatusConflict, err.Error())
+		case repo_model.IsErrRepoAlreadyExist(err):
+			ctx.APIError(http.StatusConflict, err.Error())
+		default:
+			ctx.APIErrorInternal(err)
+		}
+		return
+	}
+
+	// Auto-accept if initiator is instance admin or has permission to accept the transfer (co-owner)
+	canAccept := ctx.Doer.IsAdmin
+	if !canAccept {
+		if transfer, err := repo_model.GetPendingRepositoryTransfer(ctx, repo); err == nil {
+			if transfer.CanUserAcceptTransfer(ctx, ctx.Doer) {
+				canAccept = true
+			}
+		}
+	}
+
+	if canAccept {
+		if err := repo_service.AcceptReparent(ctx, ctx.Doer, repo); err == nil {
+			ctx.JSON(http.StatusOK, convert.ToRepo(ctx, repo, ctx.Repo.Permission))
+			return
+		}
+		// If auto-accept fails, it stays pending (202)
+	}
+
+	ctx.JSON(http.StatusAccepted, convert.ToRepo(ctx, repo, ctx.Repo.Permission))
+}
+
+// AcceptReparent accept a reparenting request
+func AcceptReparent(ctx *context.APIContext) {
+	// swagger:operation POST /repos/{owner}/{repo}/reparent/accept repository acceptRepoReparent
+	// ---
+	// summary: Accept a reparenting request
+	// produces:
+	// - application/json
+	// parameters:
+	// - name: owner
+	//   in: path
+	//   description: owner of the repo to accept reparenting for
+	//   type: string
+	//   required: true
+	// - name: repo
+	//   in: path
+	//   description: name of the repo to accept reparenting for
+	//   type: string
+	//   required: true
+	// responses:
+	//   "202":
+	//     "$ref": "#/responses/Repository"
+	//   "403":
+	//     "$ref": "#/responses/forbidden"
+	//   "404":
+	//     "$ref": "#/responses/notFound"
+
+	repoTransfer, err := repo_model.GetPendingRepositoryTransfer(ctx, ctx.Repo.Repository)
+	if err != nil {
+		if repo_model.IsErrNoPendingTransfer(err) || errors.Is(err, repo_model.ErrNoPendingRepoTransfer{}) {
+			ctx.APIError(http.StatusNotFound, err.Error())
+			return
+		}
+		ctx.APIErrorInternal(err)
+		return
+	}
+
+	if !repoTransfer.CanUserAcceptOrRejectTransfer(ctx, ctx.Doer) {
+		ctx.APIError(http.StatusForbidden, "Only the repository owner can accept reparenting")
+		return
+	}
+
+	err = repo_service.AcceptReparent(ctx, ctx.Doer, ctx.Repo.Repository)
+	if err != nil {
+		ctx.APIErrorInternal(err)
+		return
+	}
+
+	ctx.JSON(http.StatusAccepted, convert.ToRepo(ctx, ctx.Repo.Repository, ctx.Repo.Permission))
+}
+
+// RejectReparent reject a reparenting request
+func RejectReparent(ctx *context.APIContext) {
+	// swagger:operation POST /repos/{owner}/{repo}/reparent/reject repository rejectRepoReparent
+	// ---
+	// summary: Reject a reparenting request
+	// produces:
+	// - application/json
+	// parameters:
+	// - name: owner
+	//   in: path
+	//   description: owner of the repo to reject reparenting for
+	//   type: string
+	//   required: true
+	// - name: repo
+	//   in: path
+	//   description: name of the repo to reject reparenting for
+	//   type: string
+	//   required: true
+	// responses:
+	//   "200":
+	//     "$ref": "#/responses/Repository"
+	//   "403":
+	//     "$ref": "#/responses/forbidden"
+	//   "404":
+	//     "$ref": "#/responses/notFound"
+
+	repoTransfer, err := repo_model.GetPendingRepositoryTransfer(ctx, ctx.Repo.Repository)
+	if err != nil {
+		if repo_model.IsErrNoPendingTransfer(err) || errors.Is(err, repo_model.ErrNoPendingRepoTransfer{}) {
+			ctx.APIError(http.StatusNotFound, err.Error())
+			return
+		}
+		ctx.APIErrorInternal(err)
+		return
+	}
+
+	if !repoTransfer.CanUserAcceptOrRejectTransfer(ctx, ctx.Doer) && repoTransfer.DoerID != ctx.Doer.ID {
+		ctx.APIError(http.StatusForbidden, "Only the repository owner or the initiator can reject/cancel reparenting")
+		return
+	}
+
+	err = repo_service.CancelRepositoryReparent(ctx, ctx.Doer, ctx.Repo.Repository)
+	if err != nil {
+		ctx.APIErrorInternal(err)
+		return
+	}
+
+	ctx.JSON(http.StatusOK, convert.ToRepo(ctx, ctx.Repo.Repository, ctx.Repo.Permission))
+}

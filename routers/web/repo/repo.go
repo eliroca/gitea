@@ -136,6 +136,15 @@ func createCommon(ctx *context.Context) {
 	ctx.Data["MaxCreationLimitOfDoer"] = ctx.Doer.MaxCreationLimit()
 	ctx.Data["SupportedObjectFormats"] = git.DefaultFeatures().SupportedObjectFormats
 	ctx.Data["DefaultObjectFormat"] = git.ObjectFormatFromName(setting.Repository.DefaultObjectFormat)
+	user, err := user_model.GetUserByName(ctx, "pool")
+	if err == nil {
+		templateRepo, err := repo_model.GetRepositoryByName(ctx, user.ID, "new_package")
+		if err == nil {
+			ctx.Data["repo_template"] = templateRepo.ID
+			ctx.Data["repo_template_name"] = templateRepo.Name
+			ctx.Data["git_content"] = true
+		}
+	}
 }
 
 // Create render creating repository page
@@ -150,7 +159,9 @@ func Create(ctx *context.Context) {
 	ctx.Data["readme"] = "Default"
 	ctx.Data["private"] = getRepoPrivate(ctx)
 	ctx.Data["default_branch"] = setting.Repository.DefaultBranch
-	ctx.Data["repo_template_name"] = ctx.Tr("repo.template_select")
+	if ctx.Data["repo_template"] == nil {
+		ctx.Data["repo_template_name"] = ctx.Tr("repo.template_select")
+	}
 
 	templateID := ctx.FormInt64("template_id")
 	if templateID > 0 {

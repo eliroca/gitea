@@ -144,10 +144,12 @@ func (prInfo *pullRequestViewInfo) prepareMergeBoxInfoItems(ctx *context.Context
 	if !pull.IsStatusMergeable() {
 		// it is only a "protection" level blocker, it can be bypassed by admin (e.g.: manually merged)
 		if pull.IsEmpty() {
-			prInfo.MergeBoxData.infoProtectionBlockers.AddInfoItem(
-				svg.RenderHTML("octicon-alert"),
-				ctx.Locale.Tr("repo.pulls.is_empty"),
-			)
+			if pull.MergeBase != "" {
+				prInfo.MergeBoxData.infoProtectionBlockers.AddInfoItem(
+					svg.RenderHTML("octicon-alert"),
+					ctx.Locale.Tr("repo.pulls.is_empty"),
+				)
+			}
 		} else {
 			prInfo.MergeBoxData.infoProtectionBlockers.AddErrorItem(ctx.Locale.Tr("repo.pulls.cannot_auto_merge_desc"))
 			prInfo.MergeBoxData.infoProtectionBlockers.AddInfoItem(
